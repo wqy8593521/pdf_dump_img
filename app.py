@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 from extract_images import extract_images_from_pdf
 from split_subimages import process_image
+import zipfile
 
 def main():
     st.set_page_config(page_title="PDF图片提取工具", layout="wide")
@@ -86,23 +87,57 @@ def main():
                 progress_bar.progress(100)
                 status_text.text("处理完成！")
                 
-                # 打包下载
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
-                    import zipfile
-                    with zipfile.ZipFile(tmp_zip.name, 'w') as zipf:
+                # 创建下载按钮区域
+                st.subheader("下载选项")
+                download_cols = st.columns(2)
+                
+                # 按章节打包（保持目录结构）
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as chapter_zip:
+                    with zipfile.ZipFile(chapter_zip.name, 'w') as zipf:
                         for root, _, files in os.walk(split_dir):
                             for file in files:
                                 file_path = Path(root) / file
+                                # 保持目录结构
                                 arcname = file_path.relative_to(split_dir)
                                 zipf.write(file_path, arcname)
                     
-                    with open(tmp_zip.name, 'rb') as f:
-                        st.download_button(
-                            label="下载所有结果",
+                    with open(chapter_zip.name, 'rb') as f:
+                        download_cols[0].download_button(
+                            label="按章节下载",
                             data=f.read(),
-                            file_name="split_results.zip",
-                            mime="application/zip"
+                            file_name="split_results_by_chapter.zip",
+                            mime="application/zip",
+                            help="保持目录结构打包下载"
                         )
+                
+                # 所有图片打包在同一目录
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as flat_zip:
+                    with zipfile.ZipFile(flat_zip.name, 'w') as zipf:
+                        for root, _, files in os.walk(split_dir):
+                            for file in files:
+                                file_path = Path(root) / file
+                                # 使用目录名和文件名组合作为新文件名
+                                dir_name = Path(root).name
+                                arcname = f"{dir_name}_{file}"
+                                zipf.write(file_path, arcname)
+                    
+                    with open(flat_zip.name, 'rb') as f:
+                        download_cols[1].download_button(
+                            label="打包所有图片",
+                            data=f.read(),
+                            file_name="split_results_flat.zip",
+                            mime="application/zip",
+                            help="所有图片在同一目录下"
+                        )
+                
+                # 清理临时zip文件
+                try:
+                    if os.path.exists(chapter_zip.name):
+                        os.unlink(chapter_zip.name)
+                    if os.path.exists(flat_zip.name):
+                        os.unlink(flat_zip.name)
+                except Exception as e:
+                    st.warning(f"清理临时文件时出错: {e}")
             else:
                 st.error("未从PDF中提取到图片")
 
